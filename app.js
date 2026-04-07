@@ -1,10 +1,6 @@
 /**
  * FuelTrack Mobile - Core Application Logic
- */
-
-const { Pool } = require("pg");
-
-class DataManager {
+ */class DataManager {
     constructor() {
         this.apiUrl = '/api';
         this.currentUser = null;
@@ -928,8 +924,4 @@ class UIManager {
 document.addEventListener('DOMContentLoaded', async () => {
     const dm = new DataManager();
     window.ui = new UIManager(dm);
-}); const pool = new Pool({
-    // Ako aplikacija vidi ENV varijablu (na cloud-u), koristi je, a ako ne (na lokalu), koristi stare lokalne podešavanja.
-    connectionString: process.env.DATABASE_URL || "postgresql://neondb_owner:npg_DX1xcwbGvI5O@ep-winter-forest-albxjxx1.c-3.eu-central-1.aws.neon.tech/neondb?sslmode=require,"
 });
-
