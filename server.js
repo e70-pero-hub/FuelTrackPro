@@ -1,9 +1,9 @@
 const express = require('express');
+const { Pool } = require('pg');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { pool } = require('./pool');
 
 const app = express();
 const port = 3000;
@@ -29,6 +29,15 @@ const storage = multer.diskStorage({
     }
 });
 const upload = multer({ storage: storage });
+
+// PostgreSQL konekcija
+const pool = new Pool({
+    // Ako aplikacija vidi ENV varijablu (na cloud-u), koristi je, a ako ne (na lokalu), koristi stare lokalne podešavanja.
+    connectionString: process.env.DATABASE_URL || "postgresql://neondb_owner:npg_DX1xcwbGvI5O@ep-winter-forest-albxjxx1-pooler.c-3.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+    ,
+});
+
+
 
 /*new Pool({
     user: process.env.DB_USER || 'postgres',
