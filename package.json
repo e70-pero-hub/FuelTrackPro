@@ -1,0 +1,16 @@
+{
+  "name": "appfvl-v2",
+  "version": "1.0.0",
+  "description": "FuelTrack Pro V2 - Mobile Oriented",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^4.19.2",
+    "pg": "^8.19.0",
+    "multer": "^1.4.5-lts.1",
+    "html5-qrcode": "^2.3.8"
+  }
+}
