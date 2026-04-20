@@ -583,10 +583,10 @@ class UIManager {
                         </datalist>
 
                         <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-                            <button class="btn btn-primary" onclick="window.ui.applyReportFilters()" style="flex: 1;"><i class="fas fa-search"></i> Primeni filtere</button>
+                            <button class="btn btn-primary" onclick="window.ui.applyReportFilters()" style="flex: 1;"><i class="fas fa-search"></i> Primeni</button>
                             <button class="btn btn-primary" onclick="window.ui.clearReportFilters()" style="flex: 1;"><i class="fas fa-times"></i> Očisti filtere</button>
-                            <button class="btn btn-secondary" onclick="window.ui.exportToCSV()" style="flex: 1; background: #28a745; color: #fff; border-color: #28a745;"><i class="fas fa-file-excel"></i> Export (CSV)</button>
                         </div>
+                        <button class="btn btn-secondary" onclick="window.ui.exportToCSV()" style="width: 100%; margin-top: 0.5rem; background: #28a745; color: #fff; border-color: #28a745;"><i class="fas fa-file-excel"></i> Export (CSV)</button>
                     </div>
                 </div>
             `;
