@@ -565,11 +565,12 @@ class UIManager {
                 this.dm.getData('users'),
                 this.dm.getReports(filters)
             ]);
+            this.currentReportLogs = data.logs;
 
             let filterHtml = `
                 <div class="data-card" style="margin-bottom: 1rem;">
                     <div class="card-body" style="grid-template-columns: 1fr; gap: 0.5rem;">
-                        <input type="month" id="filter-month" value="${filters.month_year || ''}" placeholder="Mesec" title="Odaberi mesec i godinu" style="padding: 0.5rem; background: var(--surface-light); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 8px;">
+                        <input type="${filters.month_year ? 'month' : 'text'}" onfocus="this.type='month'" onblur="if(!this.value){this.type='text'}" id="filter-month" value="${filters.month_year || ''}" placeholder="Izaberite period (mesec/godina)" title="Odaberi mesec i godinu" style="padding: 0.5rem; background: var(--surface-light); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 8px;">
                         
                         <input type="text" id="filter-plate" list="plates-list" value="${filters.plate || ''}" placeholder="Pretraga po tablicama..." style="padding: 0.5rem; background: var(--surface-light); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 8px;">
                         <datalist id="plates-list">
@@ -581,7 +582,11 @@ class UIManager {
                             ${users.map(u => `<option value="${u.username}">${u.full_name}</option>`).join('')}
                         </datalist>
 
-                        <button class="btn btn-primary" onclick="window.ui.applyReportFilters()" style="margin-top: 0.5rem;"><i class="fas fa-search"></i> Primeni filtere</button>
+                        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                            <button class="btn btn-primary" onclick="window.ui.applyReportFilters()" style="flex: 1;"><i class="fas fa-search"></i> Primeni filtere</button>
+                            <button class="btn btn-primary" onclick="window.ui.clearReportFilters()" style="flex: 1;"><i class="fas fa-times"></i> Očisti filtere</button>
+                            <button class="btn btn-secondary" onclick="window.ui.exportToCSV()" style="flex: 1; background: #28a745; color: #fff; border-color: #28a745;"><i class="fas fa-file-excel"></i> Export (CSV)</button>
+                        </div>
                     </div>
                 </div>
             `;
@@ -730,6 +735,67 @@ class UIManager {
         this.renderReports(filters, 'fuel');
     }
 
+    clearReportFilters() {
+        document.getElementById('filter-month').value = '';
+        document.getElementById('filter-plate').value = '';
+        document.getElementById('filter-user').value = '';
+        this.renderReports({}, 'fuel');
+    }
+
+    exportToCSV() {
+        if (!this.currentReportLogs || this.currentReportLogs.length === 0) {
+            alert("Nema podataka za eksportovanje!");
+            return;
+        }
+
+        const headers = ["Vozilo", "Tablice", "Vozac", "Datum Tocenja", "Kilometraza", "Litraza", "Cena po litri", "Ukupno Placeno", "QR PIB Prodavca", "QR PFR Datum", "QR Broj Racuna"];
+        
+        const lines = [headers.join(",")];
+        this.currentReportLogs.forEach(log => {
+            let pfrDate = '';
+            let pfrId = '';
+            let pfrPib = '';
+            if (log.receipt_qr_data) {
+                try {
+                    let u = new URL(log.receipt_qr_data);
+                    pfrDate = u.searchParams.get('d') || '';
+                    pfrId = u.searchParams.get('i') || '';
+                    pfrPib = u.searchParams.get('tin') || '';
+                } catch (e) {
+                    pfrId = log.receipt_qr_data;
+                }
+            }
+            
+            const ukupanTrosak = (parseFloat(log.liters) * parseFloat(log.price)).toFixed(2);
+            
+            const row = [
+                `"${log.brand} ${log.model}"`,
+                `"${log.plate}"`,
+                `"${log.full_name}"`,
+                `"${new Date(log.fuel_date).toLocaleDateString()}"`,
+                log.km,
+                log.liters,
+                log.price,
+                ukupanTrosak,
+                `"${pfrPib}"`,
+                `"${pfrDate}"`,
+                `"${pfrId}"`
+            ];
+            lines.push(row.join(","));
+        });
+
+        const csvContent = lines.join("\\n");
+        const bom = "\\uFEFF"; // Omogućava UTF-8 enkodiranje u Excelu
+        const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", `izveštaj_goriva_${new Date().toLocaleDateString()}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
     async deleteVehicle(id) { await this.dm.deleteItem('vehicles', id) && await this.renderSection('vehicles'); }
     async deleteUser(id) { await this.dm.deleteItem('users', id) && await this.renderSection('employees'); }
     async deleteFuel(id) { await this.dm.deleteItem('fuel_logs', id) && await this.renderSection('fuel'); }
@@ -846,6 +912,7 @@ class UIManager {
         modalBody.innerHTML = `
             <form id="fuel-form">
                 <input type="hidden" id="f-qrdata" value="">
+                <input type="hidden" id="f-scanned-total" value="">
                 <div class="form-group">
                     <label>Izaberi Vozilo</label>
                     <select id="f-vehicle" required>
@@ -887,17 +954,44 @@ class UIManager {
             this.html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
             this.html5QrcodeScanner.render((decodedText, decodedResult) => {
                 document.getElementById('f-qrdata').value = decodedText;
-                alert('QR kod uspešno skeniran!');
+                
+                try {
+                    const u = new URL(decodedText);
+                    const pfrDate = u.searchParams.get('d');
+                    const pfrTotal = u.searchParams.get('tc');
+                    
+                    if(pfrDate) {
+                        document.getElementById('f-date').value = pfrDate.split('T')[0];
+                        document.getElementById('f-date').style.backgroundColor = 'rgba(40, 167, 69, 0.2)';
+                    }
+                    if(pfrTotal) {
+                        document.getElementById('f-scanned-total').value = parseFloat(pfrTotal);
+                        document.getElementById('f-price').placeholder = `Sa računa: ${pfrTotal} RSD`;
+                    }
+                    alert('QR kod uspešno učitan! Datum i račun presečeni.');
+                } catch(e) {
+                    alert('QR kod skeniran (Nije prepoznat kao zvanični PFR pa se ručno popunjava).');
+                }
+
                 this.html5QrcodeScanner.clear();
                 qrReader.style.display = 'none';
-
-                // Pokusaj parsiranja PFR kodova sa srpskih racuna ako postoji logika (mock ovde)
-                // Npr. "cena:185, litara:45..." (Ako bi imali poseban URL parser, ovde bismo popunili f-price i f-liters)
 
             }, (errorMessage) => {
                 // ignorisemo dok ne uslika
             });
         };
+
+        // Auto kalkulacija cene po litru preko QR iznosa
+        document.getElementById('f-liters').addEventListener('input', function(e) {
+            const total = document.getElementById('f-scanned-total').value;
+            const liters = parseFloat(e.target.value);
+            if (total && liters > 0) {
+                document.getElementById('f-price').value = (parseFloat(total) / liters).toFixed(2);
+                document.getElementById('f-price').style.backgroundColor = 'rgba(40, 167, 69, 0.2)';
+            } else {
+                document.getElementById('f-price').style.backgroundColor = '';
+            }
+        });
 
         document.getElementById('fuel-form').onsubmit = async (e) => {
             e.preventDefault();
