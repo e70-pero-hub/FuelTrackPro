@@ -311,9 +311,13 @@ class UIManager {
         document.querySelector('.close-modal').addEventListener('click', () => {
             this.modal.classList.add('hidden');
             if (this.html5QrcodeScanner) {
-                this.html5QrcodeScanner.clear();
-                document.getElementById('qr-reader').style.display = 'none';
+                try { this.html5QrcodeScanner.clear(); } catch(e) {}
+                this.html5QrcodeScanner = null;
             }
+            if (this.html5Qrcode) {
+                try { this.html5Qrcode.stop(); } catch(e) {}
+            }
+            document.getElementById('qr-reader').style.display = 'none';
         });
 
         document.getElementById('role-toggle').addEventListener('click', () => {
@@ -503,17 +507,59 @@ class UIManager {
         this.contentArea.innerHTML = html;
     }
 
-    async renderFuelLogs() {
+    async renderFuelLogs(filters = null) {
         this.sectionTitle.textContent = 'Istorija Točenja';
-        const [logs, vehicles] = await Promise.all([
+
+        if (filters === null) {
+            const now = new Date();
+            const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            filters = { month_year: currentMonth };
+        }
+        this.currentFuelFilters = filters;
+
+        const [allLogs, vehicles] = await Promise.all([
             this.dm.getData('fuel_logs'),
             this.dm.getData('vehicles')
         ]);
 
-        let html = ``;
+        let logs = allLogs;
+        if (filters.month_year) {
+            logs = logs.filter(log => {
+                const logDate = new Date(log.date);
+                const logMonthStr = `${logDate.getFullYear()}-${String(logDate.getMonth() + 1).padStart(2, '0')}`;
+                return logMonthStr === filters.month_year;
+            });
+        }
+        if (filters.plate) {
+            const vMatched = vehicles.filter(veh => veh.plate.toLowerCase().includes(filters.plate.toLowerCase()));
+            const vIds = vMatched.map(v => v.id);
+            logs = logs.filter(log => vIds.includes(log.vehicleId));
+        }
+
+        let html = `
+            <div class="data-card" style="margin-bottom: 1rem;">
+                <div class="card-body" style="grid-template-columns: 1fr; gap: 0.5rem;">
+                    <input type="${filters.month_year ? 'month' : 'text'}" onfocus="this.type='month'" onblur="if(!this.value){this.type='text'}" id="fuel-filter-month" value="${filters.month_year || ''}" placeholder="Izaberite period (mesec/godina)" style="padding: 0.5rem; background: var(--surface-light); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 8px;">
+                    
+                    <input type="text" id="fuel-filter-plate" list="fuel-plates-list" value="${filters.plate || ''}" placeholder="Pretraga po tablicama..." style="padding: 0.5rem; background: var(--surface-light); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 8px;">
+                    <datalist id="fuel-plates-list">
+                        ${vehicles.map(v => `<option value="${v.plate}">${v.brand} ${v.model}</option>`).join('')}
+                    </datalist>
+
+                    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                        <button class="btn btn-primary" onclick="window.ui.applyFuelFilters()" style="flex: 1;"><i class="fas fa-search"></i> Primeni</button>
+                        <button class="btn btn-primary" onclick="window.ui.clearFuelFilters()" style="flex: 1;"><i class="fas fa-times"></i> Očisti</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
         if (logs.length === 0) {
-            html += `<p style="color:var(--text-dim); text-align:center;">Nema točenja u bazi.</p>`;
+            html += `<p style="color:var(--text-dim); text-align:center;">Nema točenja za izabrane filtere.</p>`;
         } else {
+            // Sortiranje po datumu opadajuće (najnovija prva)
+            logs.sort((a, b) => new Date(b.date) - new Date(a.date));
+
             html += logs.map(log => {
                 const v = vehicles.find(veh => veh.id === log.vehicleId);
                 const vehicleName = v ? `${v.brand} ${v.model}` : `Vozilo ID: ${log.vehicleId}`;
@@ -548,14 +594,21 @@ class UIManager {
         this.contentArea.innerHTML = html;
     }
 
-    async renderReports(filters = {}, activeTab = 'fuel') {
+    async renderReports(filters = null, activeTab = 'fuel') {
         this.sectionTitle.textContent = 'Menadžerski Izveštaji';
+
+        if (filters === null) {
+            const now = new Date();
+            const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            filters = { month_year: currentMonth };
+        }
+        this.currentReportFilters = filters;
 
         // Tabs
         let tabsHtml = `
             <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
-                <button class="btn ${activeTab === 'fuel' ? 'btn-primary' : 'btn-secondary'}" style="flex:1;" onclick="window.ui.renderReports({}, 'fuel')">Gorivo i Potrošnja</button>
-                <button class="btn ${activeTab === 'warnings' ? 'btn-primary' : 'btn-secondary'}" style="flex:1;" onclick="window.ui.renderReports({}, 'warnings')">Isteci i Upozorenja</button>
+                <button class="btn ${activeTab === 'fuel' ? 'btn-primary' : 'btn-secondary'}" style="flex:1;" onclick="window.ui.renderReports(window.ui.currentReportFilters, 'fuel')">Gorivo i Potrošnja</button>
+                <button class="btn ${activeTab === 'warnings' ? 'btn-primary' : 'btn-secondary'}" style="flex:1;" onclick="window.ui.renderReports(window.ui.currentReportFilters, 'warnings')">Isteci i Upozorenja</button>
             </div>
         `;
 
@@ -688,7 +741,8 @@ class UIManager {
                             user: userName,
                             type: ev.type,
                             days: ev.days,
-                            date: ev.date
+                            date: ev.date,
+                            vehicleId: v.id
                         });
                     }
                 });
@@ -718,6 +772,11 @@ class UIManager {
                                 <div>Upozorenje: <strong><i class="fas fa-exclamation-triangle" style="color: ${w.days <= 15 ? 'var(--danger)' : 'var(--warning)'};"></i> ${w.type}</strong></div>
                                 <div style="grid-column: span 2;">Datum isteka: <strong>${new Date(w.date).toLocaleDateString()}</strong></div>
                             </div>
+                            <div class="card-actions" style="margin-top: 1rem; border-top: 1px dashed var(--border-color); padding-top: 1rem;">
+                                <button class="btn btn-accent" style="width: 100%; box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.4);" onclick="window.ui.resetVehicleDates(${w.vehicleId})">
+                                    <i class="fas fa-sync"></i> Resetuj datume
+                                </button>
+                            </div>
                         </div>
                     `;
                 }).join('');
@@ -739,7 +798,21 @@ class UIManager {
         document.getElementById('filter-month').value = '';
         document.getElementById('filter-plate').value = '';
         document.getElementById('filter-user').value = '';
-        this.renderReports({}, 'fuel');
+        this.renderReports({ month_year: '', plate: '', username: '' }, 'fuel');
+    }
+
+    applyFuelFilters() {
+        const filters = {
+            month_year: document.getElementById('fuel-filter-month').value,
+            plate: document.getElementById('fuel-filter-plate').value
+        };
+        this.renderFuelLogs(filters);
+    }
+
+    clearFuelFilters() {
+        document.getElementById('fuel-filter-month').value = '';
+        document.getElementById('fuel-filter-plate').value = '';
+        this.renderFuelLogs({ month_year: '', plate: '' });
     }
 
     exportToCSV() {
@@ -951,33 +1024,46 @@ class UIManager {
         scanBtn.onclick = () => {
             const qrReader = document.getElementById('qr-reader');
             qrReader.style.display = 'block';
-            this.html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
-            this.html5QrcodeScanner.render((decodedText, decodedResult) => {
-                document.getElementById('f-qrdata').value = decodedText;
-                
-                try {
-                    const u = new URL(decodedText);
-                    const pfrDate = u.searchParams.get('d');
-                    const pfrTotal = u.searchParams.get('tc');
+            
+            if (!this.html5Qrcode) {
+                this.html5Qrcode = new Html5Qrcode("qr-reader");
+            }
+            
+            const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+            
+            this.html5Qrcode.start(
+                { facingMode: "environment" }, 
+                config, 
+                (decodedText, decodedResult) => {
+                    document.getElementById('f-qrdata').value = decodedText;
                     
-                    if(pfrDate) {
-                        document.getElementById('f-date').value = pfrDate.split('T')[0];
-                        document.getElementById('f-date').style.backgroundColor = 'rgba(40, 167, 69, 0.2)';
+                    try {
+                        const u = new URL(decodedText);
+                        const pfrDate = u.searchParams.get('d');
+                        const pfrTotal = u.searchParams.get('tc');
+                        
+                        if(pfrDate) {
+                            document.getElementById('f-date').value = pfrDate.split('T')[0];
+                            document.getElementById('f-date').style.backgroundColor = 'rgba(40, 167, 69, 0.2)';
+                        }
+                        if(pfrTotal) {
+                            document.getElementById('f-scanned-total').value = parseFloat(pfrTotal);
+                            document.getElementById('f-price').placeholder = `Sa računa: ${pfrTotal} RSD`;
+                        }
+                        alert('QR kod uspešno učitan! Datum i račun preuzeti.');
+                    } catch(e) {
+                        alert('QR kod skeniran (Nije prepoznat kao zvanični PFR).');
                     }
-                    if(pfrTotal) {
-                        document.getElementById('f-scanned-total').value = parseFloat(pfrTotal);
-                        document.getElementById('f-price').placeholder = `Sa računa: ${pfrTotal} RSD`;
-                    }
-                    alert('QR kod uspešno učitan! Datum i račun presečeni.');
-                } catch(e) {
-                    alert('QR kod skeniran (Nije prepoznat kao zvanični PFR pa se ručno popunjava).');
+
+                    try { this.html5Qrcode.stop(); } catch(e) {}
+                    qrReader.style.display = 'none';
+                },
+                (errorMessage) => {
+                    // ignorisemo dok ne uslika
                 }
-
-                this.html5QrcodeScanner.clear();
+            ).catch(err => {
+                alert("Greška pri pokretanju zadnje kamere. Proverite dozvole u pregledaču ili izaberite ručni unos računa. " + err);
                 qrReader.style.display = 'none';
-
-            }, (errorMessage) => {
-                // ignorisemo dok ne uslika
             });
         };
 
@@ -1007,11 +1093,46 @@ class UIManager {
 
             await this.dm.addItem('fuel_logs', log, imageFile);
 
-            if (this.html5QrcodeScanner) this.html5QrcodeScanner.clear();
+            if (this.html5QrcodeScanner) {
+                try { this.html5QrcodeScanner.clear(); } catch(e) {}
+                this.html5QrcodeScanner = null;
+            }
+            if (this.html5Qrcode) {
+                try { this.html5Qrcode.stop(); } catch(e) {}
+            }
             this.modal.classList.add('hidden');
             document.getElementById('qr-reader').style.display = 'none';
             await this.renderSection('fuel');
         };
+    }
+
+    async resetVehicleDates(vehicleId) {
+        if (!confirm('Da li ste sigurni da želite da resetujete datume (Registracija +1 god, Servis +1 god, Gume +5 mes)?')) return;
+        
+        const vehicles = await this.dm.getData('vehicles');
+        const v = vehicles.find(veh => veh.id === vehicleId);
+        if (!v) return;
+
+        const addMonths = (dateStr, months) => {
+            const d = new Date(dateStr);
+            d.setMonth(d.getMonth() + months);
+            return d.toISOString().split('T')[0];
+        };
+
+        const updatedVehicle = {
+            ...v,
+            regExp: addMonths(v.regExp, 12),
+            service: addMonths(v.service, 12),
+            tires: addMonths(v.tires, 5)
+        };
+
+        const result = await this.dm.updateItem('vehicles', vehicleId, updatedVehicle);
+        if (result.error) {
+            alert(result.error);
+        } else {
+            await this.renderReports({}, 'warnings');
+            alert('Datumi uspešno resetovani!');
+        }
     }
 }
 
