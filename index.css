@@ -123,6 +123,10 @@ h2 { font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem; }
     background: var(--border);
     color: var(--text-main);
 }
+.btn-accent {
+    background: linear-gradient(135deg, var(--accent) 0%, #059669 100%);
+    color: white;
+}
 .btn-danger {
     background: rgba(239, 68, 68, 0.2);
     color: var(--danger);
