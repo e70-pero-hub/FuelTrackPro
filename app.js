@@ -311,16 +311,10 @@ class UIManager {
         document.querySelector('.close-modal').addEventListener('click', () => {
             this.modal.classList.add('hidden');
             if (this.html5QrcodeScanner) {
-                try { this.html5QrcodeScanner.clear(); } catch(e) {}
-                this.html5QrcodeScanner = null;
-            }
-            if (this.html5Qrcode) {
                 try { 
-                    this.html5Qrcode.stop().then(() => {
-                        this.html5Qrcode.clear();
-                    }).catch(() => {});
+                    this.html5QrcodeScanner.clear(); 
                 } catch(e) {}
-                this.html5Qrcode = null;
+                this.html5QrcodeScanner = null;
             }
             document.getElementById('qr-reader').style.display = 'none';
         });
@@ -1031,17 +1025,18 @@ class UIManager {
             qrReader.style.display = 'block';
             scanBtn.classList.add('hidden');
             
-            if (this.html5Qrcode) {
-                try { this.html5Qrcode.stop().then(() => this.html5Qrcode.clear()).catch(()=>{}); } catch(e) {}
+            if (this.html5QrcodeScanner) {
+                try { this.html5QrcodeScanner.clear(); } catch(e) {}
             }
             
-            this.html5Qrcode = new Html5Qrcode("qr-reader");
+            // Html5QrcodeScanner is usually more robust as it provides built-in UI for camera selection
+            this.html5QrcodeScanner = new Html5QrcodeScanner(
+                "qr-reader", 
+                { fps: 10, qrbox: { width: 250, height: 250 }, rememberLastUsedCamera: true },
+                /* verbose= */ false
+            );
             
-            const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-            
-            this.html5Qrcode.start(
-                { facingMode: "environment" }, 
-                config, 
+            this.html5QrcodeScanner.render(
                 (decodedText, decodedResult) => {
                     document.getElementById('f-qrdata').value = decodedText;
                     
@@ -1051,7 +1046,6 @@ class UIManager {
                         const pfrTotal = u.searchParams.get('tc');
                         
                         if(pfrDate) {
-                            // Extract just the date part (YYYY-MM-DD) from the PFR date string, considering it might have timezone info
                             const dateMatch = pfrDate.match(/^(\d{4}-\d{2}-\d{2})/);
                             if (dateMatch) {
                                 document.getElementById('f-date').value = dateMatch[1];
@@ -1061,7 +1055,6 @@ class UIManager {
                         if(pfrTotal) {
                             document.getElementById('f-scanned-total').value = parseFloat(pfrTotal);
                             document.getElementById('f-price').placeholder = `Sa računa: ${pfrTotal} RSD`;
-                            // Recalculate price if liters already entered
                             const liters = parseFloat(document.getElementById('f-liters').value);
                             if (liters > 0) {
                                 document.getElementById('f-price').value = (parseFloat(pfrTotal) / liters).toFixed(2);
@@ -1073,23 +1066,15 @@ class UIManager {
                         alert('QR kod skeniran (Nije prepoznat kao zvanični PFR račun).');
                     }
 
-                    try { 
-                        this.html5Qrcode.stop().then(() => {
-                            this.html5Qrcode.clear();
-                        }).catch(()=>{}); 
-                    } catch(e) {}
-                    this.html5Qrcode = null;
+                    try { this.html5QrcodeScanner.clear(); } catch(e) {}
+                    this.html5QrcodeScanner = null;
                     qrReader.style.display = 'none';
                     scanBtn.classList.remove('hidden');
                 },
                 (errorMessage) => {
-                    // ignorisemo dok ne uslika
+                    // ignorisemo
                 }
-            ).catch(err => {
-                alert("Greška pri pokretanju kamere. Pokušajte ponovo ili unesite podatke ručno. Razlog: " + err);
-                qrReader.style.display = 'none';
-                scanBtn.classList.remove('hidden');
-            });
+            );
         };
 
         // Auto kalkulacija cene po litru preko QR iznosa
@@ -1119,14 +1104,10 @@ class UIManager {
             await this.dm.addItem('fuel_logs', log, imageFile);
 
             if (this.html5QrcodeScanner) {
-                try { this.html5QrcodeScanner.clear(); } catch(e) {}
-                this.html5QrcodeScanner = null;
-            }
-            if (this.html5Qrcode) {
                 try { 
-                    this.html5Qrcode.stop().then(() => this.html5Qrcode.clear()).catch(()=>{}); 
+                    this.html5QrcodeScanner.clear(); 
                 } catch(e) {}
-                this.html5Qrcode = null;
+                this.html5QrcodeScanner = null;
             }
             this.modal.classList.add('hidden');
             document.getElementById('qr-reader').style.display = 'none';
