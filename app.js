@@ -315,7 +315,12 @@ class UIManager {
                 this.html5QrcodeScanner = null;
             }
             if (this.html5Qrcode) {
-                try { this.html5Qrcode.stop(); } catch(e) {}
+                try { 
+                    this.html5Qrcode.stop().then(() => {
+                        this.html5Qrcode.clear();
+                    }).catch(() => {});
+                } catch(e) {}
+                this.html5Qrcode = null;
             }
             document.getElementById('qr-reader').style.display = 'none';
         });
@@ -1024,10 +1029,13 @@ class UIManager {
         scanBtn.onclick = () => {
             const qrReader = document.getElementById('qr-reader');
             qrReader.style.display = 'block';
+            scanBtn.classList.add('hidden');
             
-            if (!this.html5Qrcode) {
-                this.html5Qrcode = new Html5Qrcode("qr-reader");
+            if (this.html5Qrcode) {
+                try { this.html5Qrcode.stop().then(() => this.html5Qrcode.clear()).catch(()=>{}); } catch(e) {}
             }
+            
+            this.html5Qrcode = new Html5Qrcode("qr-reader");
             
             const config = { fps: 10, qrbox: { width: 250, height: 250 } };
             
@@ -1043,27 +1051,44 @@ class UIManager {
                         const pfrTotal = u.searchParams.get('tc');
                         
                         if(pfrDate) {
-                            document.getElementById('f-date').value = pfrDate.split('T')[0];
-                            document.getElementById('f-date').style.backgroundColor = 'rgba(40, 167, 69, 0.2)';
+                            // Extract just the date part (YYYY-MM-DD) from the PFR date string, considering it might have timezone info
+                            const dateMatch = pfrDate.match(/^(\d{4}-\d{2}-\d{2})/);
+                            if (dateMatch) {
+                                document.getElementById('f-date').value = dateMatch[1];
+                                document.getElementById('f-date').style.backgroundColor = 'rgba(40, 167, 69, 0.2)';
+                            }
                         }
                         if(pfrTotal) {
                             document.getElementById('f-scanned-total').value = parseFloat(pfrTotal);
                             document.getElementById('f-price').placeholder = `Sa računa: ${pfrTotal} RSD`;
+                            // Recalculate price if liters already entered
+                            const liters = parseFloat(document.getElementById('f-liters').value);
+                            if (liters > 0) {
+                                document.getElementById('f-price').value = (parseFloat(pfrTotal) / liters).toFixed(2);
+                                document.getElementById('f-price').style.backgroundColor = 'rgba(40, 167, 69, 0.2)';
+                            }
                         }
                         alert('QR kod uspešno učitan! Datum i račun preuzeti.');
                     } catch(e) {
-                        alert('QR kod skeniran (Nije prepoznat kao zvanični PFR).');
+                        alert('QR kod skeniran (Nije prepoznat kao zvanični PFR račun).');
                     }
 
-                    try { this.html5Qrcode.stop(); } catch(e) {}
+                    try { 
+                        this.html5Qrcode.stop().then(() => {
+                            this.html5Qrcode.clear();
+                        }).catch(()=>{}); 
+                    } catch(e) {}
+                    this.html5Qrcode = null;
                     qrReader.style.display = 'none';
+                    scanBtn.classList.remove('hidden');
                 },
                 (errorMessage) => {
                     // ignorisemo dok ne uslika
                 }
             ).catch(err => {
-                alert("Greška pri pokretanju zadnje kamere. Proverite dozvole u pregledaču ili izaberite ručni unos računa. " + err);
+                alert("Greška pri pokretanju kamere. Pokušajte ponovo ili unesite podatke ručno. Razlog: " + err);
                 qrReader.style.display = 'none';
+                scanBtn.classList.remove('hidden');
             });
         };
 
@@ -1098,10 +1123,14 @@ class UIManager {
                 this.html5QrcodeScanner = null;
             }
             if (this.html5Qrcode) {
-                try { this.html5Qrcode.stop(); } catch(e) {}
+                try { 
+                    this.html5Qrcode.stop().then(() => this.html5Qrcode.clear()).catch(()=>{}); 
+                } catch(e) {}
+                this.html5Qrcode = null;
             }
             this.modal.classList.add('hidden');
             document.getElementById('qr-reader').style.display = 'none';
+            document.getElementById('scan-qr-btn').classList.remove('hidden');
             await this.renderSection('fuel');
         };
     }
