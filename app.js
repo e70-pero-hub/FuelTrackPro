@@ -308,15 +308,17 @@ class UIManager {
             this.showFuelForm();
         });
 
-        document.querySelector('.close-modal').addEventListener('click', () => {
+        document.querySelector('.close-modal').addEventListener('click', async () => {
             this.modal.classList.add('hidden');
             if (this.html5QrcodeScanner) {
                 try { 
-                    this.html5QrcodeScanner.clear(); 
+                    await this.html5QrcodeScanner.stop(); 
                 } catch(e) {}
                 this.html5QrcodeScanner = null;
             }
-            document.getElementById('qr-reader').style.display = 'none';
+            const qrEl = document.getElementById('qr-reader');
+            qrEl.style.display = 'none';
+            qrEl.innerHTML = '';
         });
 
         document.getElementById('role-toggle').addEventListener('click', () => {
@@ -1019,62 +1021,71 @@ class UIManager {
 
         this.modal.classList.remove('hidden');
 
-        // QR Skener Listener
-        scanBtn.onclick = () => {
+        // QR Skener Listener - direktan pristup kameri bez UI za izbor kamere
+        scanBtn.onclick = async () => {
             const qrReader = document.getElementById('qr-reader');
             qrReader.style.display = 'block';
+            qrReader.innerHTML = '';
             scanBtn.classList.add('hidden');
             
+            // Zaustavi prethodni skener ako postoji
             if (this.html5QrcodeScanner) {
-                try { this.html5QrcodeScanner.clear(); } catch(e) {}
+                try { await this.html5QrcodeScanner.stop(); } catch(e) {}
+                this.html5QrcodeScanner = null;
             }
             
-            // Html5QrcodeScanner is usually more robust as it provides built-in UI for camera selection
-            this.html5QrcodeScanner = new Html5QrcodeScanner(
-                "qr-reader", 
-                { fps: 10, qrbox: { width: 250, height: 250 }, rememberLastUsedCamera: true },
-                /* verbose= */ false
-            );
+            this.html5QrcodeScanner = new Html5Qrcode("qr-reader");
             
-            this.html5QrcodeScanner.render(
-                (decodedText, decodedResult) => {
-                    document.getElementById('f-qrdata').value = decodedText;
+            const onScanSuccess = async (decodedText) => {
+                document.getElementById('f-qrdata').value = decodedText;
+                
+                try {
+                    const u = new URL(decodedText);
+                    const pfrDate = u.searchParams.get('d');
+                    const pfrTotal = u.searchParams.get('tc');
                     
-                    try {
-                        const u = new URL(decodedText);
-                        const pfrDate = u.searchParams.get('d');
-                        const pfrTotal = u.searchParams.get('tc');
-                        
-                        if(pfrDate) {
-                            const dateMatch = pfrDate.match(/^(\d{4}-\d{2}-\d{2})/);
-                            if (dateMatch) {
-                                document.getElementById('f-date').value = dateMatch[1];
-                                document.getElementById('f-date').style.backgroundColor = 'rgba(40, 167, 69, 0.2)';
-                            }
+                    if(pfrDate) {
+                        const dateMatch = pfrDate.match(/^(\d{4}-\d{2}-\d{2})/);
+                        if (dateMatch) {
+                            document.getElementById('f-date').value = dateMatch[1];
+                            document.getElementById('f-date').style.backgroundColor = 'rgba(40, 167, 69, 0.2)';
                         }
-                        if(pfrTotal) {
-                            document.getElementById('f-scanned-total').value = parseFloat(pfrTotal);
-                            document.getElementById('f-price').placeholder = `Sa računa: ${pfrTotal} RSD`;
-                            const liters = parseFloat(document.getElementById('f-liters').value);
-                            if (liters > 0) {
-                                document.getElementById('f-price').value = (parseFloat(pfrTotal) / liters).toFixed(2);
-                                document.getElementById('f-price').style.backgroundColor = 'rgba(40, 167, 69, 0.2)';
-                            }
-                        }
-                        alert('QR kod uspešno učitan! Datum i račun preuzeti.');
-                    } catch(e) {
-                        alert('QR kod skeniran (Nije prepoznat kao zvanični PFR račun).');
                     }
-
-                    try { this.html5QrcodeScanner.clear(); } catch(e) {}
-                    this.html5QrcodeScanner = null;
-                    qrReader.style.display = 'none';
-                    scanBtn.classList.remove('hidden');
-                },
-                (errorMessage) => {
-                    // ignorisemo
+                    if(pfrTotal) {
+                        document.getElementById('f-scanned-total').value = parseFloat(pfrTotal);
+                        document.getElementById('f-price').placeholder = `Sa računa: ${pfrTotal} RSD`;
+                        const liters = parseFloat(document.getElementById('f-liters').value);
+                        if (liters > 0) {
+                            document.getElementById('f-price').value = (parseFloat(pfrTotal) / liters).toFixed(2);
+                            document.getElementById('f-price').style.backgroundColor = 'rgba(40, 167, 69, 0.2)';
+                        }
+                    }
+                    alert('QR kod uspešno učitan! Datum i račun preuzeti.');
+                } catch(e) {
+                    alert('QR kod skeniran (Nije prepoznat kao zvanični PFR račun).');
                 }
-            );
+
+                try { await this.html5QrcodeScanner.stop(); } catch(e) {}
+                this.html5QrcodeScanner = null;
+                qrReader.style.display = 'none';
+                qrReader.innerHTML = '';
+                scanBtn.classList.remove('hidden');
+            };
+            
+            try {
+                await this.html5QrcodeScanner.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: { width: 250, height: 250 } },
+                    onScanSuccess,
+                    () => {} // ignorisemo greške skeniranja
+                );
+            } catch (err) {
+                console.error('Greška pri pokretanju kamere:', err);
+                alert('Nije moguće pristupiti kameri. Proverite dozvole za kameru u podešavanjima pregledača.');
+                qrReader.style.display = 'none';
+                qrReader.innerHTML = '';
+                scanBtn.classList.remove('hidden');
+            }
         };
 
         // Auto kalkulacija cene po litru preko QR iznosa
@@ -1105,12 +1116,14 @@ class UIManager {
 
             if (this.html5QrcodeScanner) {
                 try { 
-                    this.html5QrcodeScanner.clear(); 
+                    await this.html5QrcodeScanner.stop(); 
                 } catch(e) {}
                 this.html5QrcodeScanner = null;
             }
             this.modal.classList.add('hidden');
-            document.getElementById('qr-reader').style.display = 'none';
+            const qrEl = document.getElementById('qr-reader');
+            qrEl.style.display = 'none';
+            qrEl.innerHTML = '';
             document.getElementById('scan-qr-btn').classList.remove('hidden');
             await this.renderSection('fuel');
         };
